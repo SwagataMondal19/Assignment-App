@@ -20,22 +20,30 @@ jobs:
       - name: Deploy to EC2 via SSM
         run: |
           aws ssm send-command --document-name "AWS-RunShellScript" \
-          --targets "Key=tag:App,Values=Assignment" \
+          --instance-ids i-04944ba76ed3cb5ad \
           --comment "Deploy Node App" \
           --parameters 'commands=[
             "set -e",
             "echo START DEPLOY",
+ 
             "sudo yum install -y nodejs npm git",
+ 
             "sudo npm install -g pm2",
             "pm2 -v",
+ 
             "sudo mkdir -p /var/www/app",
             "cd /var/www/app",
+ 
             "if [ ! -d .git ]; then sudo git clone https://github.com/SwagataMondal19/Assignment-App.git .; else sudo git pull origin main; fi",
+ 
             "npm install",
+ 
             "pm2 stop app || true",
             "pm2 start app.js --name app",
             "pm2 save",
+ 
             "curl -f http://localhost:3000/health",
+ 
             "echo DEPLOY COMPLETE"
           ]' \
           --region ap-south-1
