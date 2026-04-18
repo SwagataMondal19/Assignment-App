@@ -1,55 +1,102 @@
 name: Deploy Node App via SSM
  
 on:
+
   push:
+
     branches:
+
       - main
  
 jobs:
+
   deploy:
+
     runs-on: ubuntu-latest
  
     steps:
+
       - name: Configure AWS Credentials
+
         uses: aws-actions/configure-aws-credentials@v4
+
         with:
+
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
           aws-region: ap-south-1
  
       - name: Deploy to EC2 via SSM
+
         run: |
+
           aws ssm send-command \
+
           --document-name "AWS-RunShellScript" \
+
           --targets Key=tag:App,Values=Assignment \
+
+          --comment "Deploy Node App" \
+
           --parameters '{
+
             "commands": [
+
+              "set -e",
+ 
               "echo ===== START DEPLOY =====",
  
-              "sudo yum update -y",
+              "echo Installing Node",
+
+              "curl -sL https://rpm.nodesource.com/setup_18.x | sudo bash -",
+
+              "sudo yum install -y nodejs git",
  
-              "echo Installing Node if not present",
-              "command -v node || (curl -sL https://rpm.nodesource.com/setup_18.x | sudo bash - && sudo yum install -y nodejs git)",
+              "echo Verifying Node",
+
+              "node -v",
+
+              "npm -v",
  
-              "echo Installing PM2 if not present",
-              "command -v pm2 || sudo npm install -g pm2",
+              "echo Installing PM2",
+
+              "sudo npm install -g pm2",
+
+              "pm2 -v",
  
               "echo Preparing app directory",
+
               "sudo mkdir -p /var/www/app",
+
               "cd /var/www/app",
  
               "echo Cloning or pulling latest code",
+
               "if [ ! -d .git ]; then sudo git clone https://github.com/SwagataMondal19/Assignment-App.git .; else sudo git pull origin main; fi",
  
               "echo Installing dependencies",
+
               "npm install",
  
               "echo Restarting app",
+
               "pm2 stop app || true",
+
               "pm2 start app.js --name app",
+
               "pm2 save",
  
+              "echo Testing app locally",
+
+              "curl -f http://localhost:3000/health",
+ 
               "echo ===== DEPLOY COMPLETE ====="
+
             ]
+
           }' \
+
           --region ap-south-1
+ 
