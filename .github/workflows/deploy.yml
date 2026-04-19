@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -20,27 +24,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      # 🚀 Launch temporary EC2 (Amazon Linux 2023)
+      # 🚀 Launch temporary EC2
       - name: Launch Temporary Instance
         run: |
           INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ami-0e12fc2dd465f6e64 \
+            --image-id ami-0e12ffc2dd465f6e4 \
             --instance-type t2.micro \
             --subnet-id subnet-0a327a1d37f267db0 \
             --security-group-ids sg-0aa41c1894bbe077b \
-            --user-data "$(base64 -w 0 userdata.sh)" \
+            --user-data fileb://userdata.sh \
             --query 'Instances[0].InstanceId' \
             --output text)
 
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
           echo "Launched Instance: $INSTANCE_ID"
 
-      # ⏳ Wait for instance + userdata
+      # ⏳ Wait for instance
       - name: Wait for Instance
         run: |
           aws ec2 wait instance-running --instance-ids $INSTANCE_ID
           echo "Instance is running..."
-          sleep 240   # safer wait for setup
+          sleep 180
 
       # 📦 Create AMI
       - name: Create AMI
@@ -61,20 +65,20 @@ jobs:
           aws ec2 wait image-available --image-ids $AMI_ID
           echo "AMI is ready"
 
-      # 🔄 Create new Launch Template version
+      # 🔄 Update Launch Template
       - name: Update Launch Template
         run: |
           aws ec2 create-launch-template-version \
             --launch-template-id lt-0fb59605d82b68517 \
-            --source-version '$Latest' \
+            --source-version 1 \
             --launch-template-data "{\"ImageId\":\"$AMI_ID\"}"
 
-      # 🔧 Set latest version as default (FIXED)
+      # 🔧 Set default version
       - name: Set Default Version
         run: |
           VERSION=$(aws ec2 describe-launch-template-versions \
             --launch-template-id lt-0fb59605d82b68517 \
-            --query 'max_by(LaunchTemplateVersions, &VersionNumber).VersionNumber' \
+            --query 'LaunchTemplateVersions[-1].VersionNumber' \
             --output text)
 
           aws ec2 modify-launch-template \
