@@ -28,7 +28,7 @@ jobs:
             --instance-type t2.micro \
             --subnet-id subnet-0a327a1d37f267db0 \
             --security-group-ids sg-0aa41c1894bbe077b \
-            --user-data file://userdata.sh \
+            --user-data "$(base64 -w 0 userdata.sh)" \
             --query 'Instances[0].InstanceId' \
             --output text)
 
@@ -40,7 +40,9 @@ jobs:
         run: |
           aws ec2 wait instance-running --instance-ids $INSTANCE_ID
           echo "Instance is running..."
-          sleep 120
+          
+          # 🔥 IMPORTANT: wait for userdata to finish
+          sleep 180
 
       # 📦 Create AMI
       - name: Create AMI
