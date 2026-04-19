@@ -53,7 +53,7 @@ jobs:
           # buffer for userdata completion
           sleep 60
 
-      # 🧪 Validate app is running (via SSM)
+      # 🧪 Validate app (FIXED)
       - name: Validate App
         run: |
           echo "Validating app on port 3000..."
@@ -61,10 +61,10 @@ jobs:
           aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="curl -s localhost:3000 || echo 'App not responding'" \
+            --parameters '{"commands":["pm2 list","curl -s localhost:3000"]}' \
             --region ap-south-1
 
-      # 📦 Create AMI (safe version)
+      # 📦 Create AMI
       - name: Create AMI
         run: |
           AMI_ID=$(aws ec2 create-image \
@@ -82,7 +82,7 @@ jobs:
           aws ec2 wait image-available --image-ids $AMI_ID
           echo "AMI is ready"
 
-      # 🔄 Create new Launch Template version
+      # 🔄 Update Launch Template
       - name: Update Launch Template
         run: |
           aws ec2 create-launch-template-version \
@@ -90,7 +90,7 @@ jobs:
             --source-version '$Latest' \
             --launch-template-data "{\"ImageId\":\"$AMI_ID\"}"
 
-      # 🔧 Set latest version as default
+      # 🔧 Set Default Version
       - name: Set Default Version
         run: |
           VERSION=$(aws ec2 describe-launch-template-versions \
@@ -112,7 +112,7 @@ jobs:
 
           echo "Started ASG refresh"
 
-      # 🧹 Cleanup temp instance
+      # 🧹 Cleanup
       - name: Terminate Temp Instance
         run: |
           aws ec2 terminate-instances --instance-ids $INSTANCE_ID
