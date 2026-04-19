@@ -4,24 +4,22 @@ set -e
 # Update system
 dnf update -y
 
-# Install packages
-dnf install -y git nodejs npm amazon-cloudwatch-agent
+# Install Node properly
+curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -
+dnf install -y nodejs git amazon-cloudwatch-agent
 
 # App setup
 mkdir -p /var/www/app
 cd /var/www/app
 
-# Clone or pull repo
 if [ ! -d ".git" ]; then
   git clone https://github.com/SwagataMondal19/Assignment-App.git .
 else
   git pull origin main
 fi
 
-# Install dependencies
 npm install
 
-# Fix ownership
 chown -R ec2-user:ec2-user /var/www/app
 
 # Run app as ec2-user
@@ -34,8 +32,11 @@ pm2 save
 pm2 startup systemd -u ec2-user --hp /home/ec2-user
 EOF
 
-# CloudWatch Agent config
-cat <<EOF > /opt/aws/amazon-cloudwatch-agent/bin/config.json
+# Enable PM2 on boot
+systemctl enable pm2-ec2-user
+
+# CloudWatch config
+cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 {
   "metrics": {
     "append_dimensions": {
@@ -58,5 +59,7 @@ EOF
 /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
 -a fetch-config \
 -m ec2 \
--c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json \
+-c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json \
 -s
+
+sleep 30
