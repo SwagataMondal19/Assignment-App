@@ -28,14 +28,14 @@ jobs:
             --instance-type t2.micro \
             --subnet-id subnet-0a327a1d37f267db0 \
             --security-group-ids sg-0aa41c1894bbe077b \
-            --user-data fileb://userdata.sh \
+            --user-data file://userdata.sh \
             --query 'Instances[0].InstanceId' \
             --output text)
 
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
           echo "Launched Instance: $INSTANCE_ID"
 
-      # ⏳ Wait for instance to be ready
+      # ⏳ Wait for instance
       - name: Wait for Instance
         run: |
           aws ec2 wait instance-running --instance-ids $INSTANCE_ID
@@ -55,13 +55,13 @@ jobs:
           echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
           echo "Created AMI: $AMI_ID"
 
-      # ⏳ Wait for AMI to be available
+      # ⏳ Wait for AMI
       - name: Wait for AMI
         run: |
           aws ec2 wait image-available --image-ids $AMI_ID
           echo "AMI is ready"
 
-      # 🔄 Create new Launch Template version
+      # 🔄 Update Launch Template
       - name: Update Launch Template
         run: |
           aws ec2 create-launch-template-version \
@@ -69,7 +69,7 @@ jobs:
             --source-version 1 \
             --launch-template-data "{\"ImageId\":\"$AMI_ID\"}"
 
-      # 🔧 Set latest version as default
+      # 🔧 Set default version
       - name: Set Default Version
         run: |
           VERSION=$(aws ec2 describe-launch-template-versions \
@@ -83,7 +83,7 @@ jobs:
 
           echo "Set default launch template version: $VERSION"
 
-      # ♻️ Trigger Auto Scaling refresh
+      # ♻️ Refresh ASG
       - name: Refresh ASG
         run: |
           aws autoscaling start-instance-refresh \
@@ -91,7 +91,7 @@ jobs:
 
           echo "Started ASG refresh"
 
-      # 🧹 Cleanup temporary instance
+      # 🧹 Cleanup temp instance
       - name: Terminate Temp Instance
         run: |
           aws ec2 terminate-instances --instance-ids $INSTANCE_ID
