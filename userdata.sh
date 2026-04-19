@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Log everything for debugging
+# Log everything
 exec > /var/log/user-data.log 2>&1
 
 echo "===== USER DATA START ====="
@@ -15,8 +15,8 @@ done
 # Update system
 dnf update -y
 
-# Install required packages
-dnf install -y git curl amazon-cloudwatch-agent
+# 🔥 FIXED: removed curl (causing failure)
+dnf install -y git amazon-cloudwatch-agent
 
 # Install Node.js 18
 curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -
@@ -31,7 +31,7 @@ APP_DIR="/var/www/app"
 mkdir -p $APP_DIR
 cd $APP_DIR
 
-# Clone repo fresh
+# Clone repo
 git clone https://github.com/SwagataMondal19/Assignment-App.git .
 
 # Install dependencies
@@ -40,20 +40,16 @@ npm install
 # Fix ownership
 chown -R ec2-user:ec2-user $APP_DIR
 
-# Setup PM2 as ec2-user
+# Setup PM2
 sudo -u ec2-user bash <<EOF
 cd /var/www/app
 
-# Install PM2 globally
 npm install -g pm2
 
-# Start app
 pm2 start app.js --name app
-
-# Save PM2 process list
 pm2 save
 
-# Setup PM2 startup (IMPORTANT FIX)
+# 🔥 IMPORTANT: systemd setup fix
 pm2 startup systemd -u ec2-user --hp /home/ec2-user | tail -1 | bash
 EOF
 
