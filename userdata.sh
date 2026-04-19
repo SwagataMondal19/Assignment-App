@@ -1,8 +1,9 @@
 #!/bin/bash
+set -e
+
 yum update -y
 yum install -y nodejs npm git amazon-cloudwatch-agent
 
-# App setup
 mkdir -p /var/www/app
 cd /var/www/app
 
@@ -10,15 +11,12 @@ git clone https://github.com/SwagataMondal19/Assignment-App.git .
 
 npm install
 
-# Start app
 npm install -g pm2
 pm2 start app.js --name app
 pm2 save
 
-# Enable PM2 on reboot
 pm2 startup systemd -u ec2-user --hp /home/ec2-user
 
-# CloudWatch Agent config
 cat <<EOF > /opt/aws/amazon-cloudwatch-agent/bin/config.json
 {
   "metrics": {
@@ -38,7 +36,6 @@ cat <<EOF > /opt/aws/amazon-cloudwatch-agent/bin/config.json
 }
 EOF
 
-# Start CloudWatch Agent
 /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
 -a fetch-config \
 -m ec2 \
