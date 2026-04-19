@@ -5,8 +5,9 @@ on:
     branches:
       - main
 
+# 🔥 Prevent duplicate runs (important)
 concurrency:
-  group: deploy-main
+  group: deploy
   cancel-in-progress: true
 
 jobs:
@@ -24,27 +25,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      # 🚀 Launch temporary EC2
+      # 🚀 Launch temporary EC2 (Amazon Linux 2023)
       - name: Launch Temporary Instance
         run: |
           INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ami-0e12ffc2dd465f6e4 \
+            --image-id ami-0e12fc2dd465f6e64 \
             --instance-type t2.micro \
             --subnet-id subnet-0a327a1d37f267db0 \
             --security-group-ids sg-0aa41c1894bbe077b \
-            --user-data fileb://userdata.sh \
+            --user-data "$(base64 -w 0 userdata.sh)" \
             --query 'Instances[0].InstanceId' \
             --output text)
 
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
           echo "Launched Instance: $INSTANCE_ID"
 
-      # ⏳ Wait for instance
+      # ⏳ Wait for instance + userdata
       - name: Wait for Instance
         run: |
           aws ec2 wait instance-running --instance-ids $INSTANCE_ID
           echo "Instance is running..."
-          sleep 180
+          sleep 240
 
       # 📦 Create AMI
       - name: Create AMI
@@ -65,20 +66,20 @@ jobs:
           aws ec2 wait image-available --image-ids $AMI_ID
           echo "AMI is ready"
 
-      # 🔄 Update Launch Template
+      # 🔄 Create new Launch Template version (IMPORTANT FIX)
       - name: Update Launch Template
         run: |
           aws ec2 create-launch-template-version \
             --launch-template-id lt-0fb59605d82b68517 \
-            --source-version 1 \
+            --source-version '$Latest' \
             --launch-template-data "{\"ImageId\":\"$AMI_ID\"}"
 
-      # 🔧 Set default version
+      # 🔧 Set latest version as default (CRITICAL FIX)
       - name: Set Default Version
         run: |
           VERSION=$(aws ec2 describe-launch-template-versions \
             --launch-template-id lt-0fb59605d82b68517 \
-            --query 'LaunchTemplateVersions[-1].VersionNumber' \
+            --query 'max_by(LaunchTemplateVersions, &VersionNumber).VersionNumber' \
             --output text)
 
           aws ec2 modify-launch-template \
@@ -87,7 +88,7 @@ jobs:
 
           echo "Set default launch template version: $VERSION"
 
-      # ♻️ Refresh ASG
+      # ♻️ Refresh ASG (to launch new instances)
       - name: Refresh ASG
         run: |
           aws autoscaling start-instance-refresh \
