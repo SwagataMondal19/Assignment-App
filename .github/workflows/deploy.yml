@@ -5,7 +5,6 @@ on:
     branches:
       - main
 
-# 🔥 Prevent duplicate runs (important)
 concurrency:
   group: deploy
   cancel-in-progress: true
@@ -25,7 +24,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      # 🚀 Launch temporary EC2 (Amazon Linux 2023)
+      # 🚀 Launch temporary EC2
       - name: Launch Temporary Instance
         run: |
           INSTANCE_ID=$(aws ec2 run-instances \
@@ -33,27 +32,44 @@ jobs:
             --instance-type t2.micro \
             --subnet-id subnet-0a327a1d37f267db0 \
             --security-group-ids sg-0aa41c1894bbe077b \
+            --iam-instance-profile Name=AmazonSSMRoleForInstancesQuickSetup \
             --user-data file://userdata.sh \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=AMI-Builder}]' \
             --query 'Instances[0].InstanceId' \
             --output text)
 
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
           echo "Launched Instance: $INSTANCE_ID"
 
-      # ⏳ Wait for instance + userdata
+      # ⏳ Wait for instance readiness
       - name: Wait for Instance
         run: |
           aws ec2 wait instance-running --instance-ids $INSTANCE_ID
           echo "Instance is running..."
-          sleep 240
 
-      # 📦 Create AMI
+          aws ec2 wait instance-status-ok --instance-ids $INSTANCE_ID
+          echo "Instance passed status checks"
+
+          # buffer for userdata completion
+          sleep 60
+
+      # 🧪 Validate app is running (via SSM)
+      - name: Validate App
+        run: |
+          echo "Validating app on port 3000..."
+
+          aws ssm send-command \
+            --instance-ids $INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands="curl -s localhost:3000 || echo 'App not responding'" \
+            --region ap-south-1
+
+      # 📦 Create AMI (safe version)
       - name: Create AMI
         run: |
           AMI_ID=$(aws ec2 create-image \
             --instance-id $INSTANCE_ID \
             --name "app-ami-$(date +%s)" \
-            --no-reboot \
             --query 'ImageId' \
             --output text)
 
@@ -66,7 +82,7 @@ jobs:
           aws ec2 wait image-available --image-ids $AMI_ID
           echo "AMI is ready"
 
-      # 🔄 Create new Launch Template version (IMPORTANT FIX)
+      # 🔄 Create new Launch Template version
       - name: Update Launch Template
         run: |
           aws ec2 create-launch-template-version \
@@ -74,7 +90,7 @@ jobs:
             --source-version '$Latest' \
             --launch-template-data "{\"ImageId\":\"$AMI_ID\"}"
 
-      # 🔧 Set latest version as default (CRITICAL FIX)
+      # 🔧 Set latest version as default
       - name: Set Default Version
         run: |
           VERSION=$(aws ec2 describe-launch-template-versions \
@@ -88,7 +104,7 @@ jobs:
 
           echo "Set default launch template version: $VERSION"
 
-      # ♻️ Refresh ASG (to launch new instances)
+      # ♻️ Refresh ASG
       - name: Refresh ASG
         run: |
           aws autoscaling start-instance-refresh \
