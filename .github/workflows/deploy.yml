@@ -29,7 +29,7 @@ jobs:
       - name: Launch Temporary Instance
         run: |
           INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ami-0e12fc2dd465f6e64 \
+            --image-id ami-0e12ffc2dd465f6e4 \
             --instance-type t2.micro \
             --subnet-id subnet-0a327a1d37f267db0 \
             --security-group-ids sg-0aa41c1894bbe077b \
