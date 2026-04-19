@@ -32,7 +32,7 @@ jobs:
             --instance-type t2.micro \
             --subnet-id subnet-0a327a1d37f267db0 \
             --security-group-ids sg-0aa41c1894bbe077b \
-            --iam-instance-profile Name=ssm-role \
+            --iam-instance-profile Name=terraform-20260417210110789800000001 \
             --user-data file://userdata.sh \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=AMI-Builder}]' \
             --query 'Instances[0].InstanceId' \
