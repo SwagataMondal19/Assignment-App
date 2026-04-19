@@ -1,49 +1,98 @@
-name: Deploy Node App via SSM
- 
+name: AMI Based Deployment
+
 on:
   push:
     branches:
       - main
- 
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
- 
+
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
- 
-      - name: Deploy to EC2 via SSM
+
+      # 🚀 Launch temporary EC2
+      - name: Launch Temporary Instance
         run: |
-          aws ssm send-command --document-name "AWS-RunShellScript" \
-          --instance-ids i-04944ba76ed3cb5ad \
-          --comment "Deploy Node App" \
-          --parameters 'commands=[
-            "set -e",
-            "echo START DEPLOY",
- 
-            "sudo yum install -y nodejs npm git",
- 
-            "sudo npm install -g pm2",
-            "pm2 -v",
- 
-            "sudo mkdir -p /var/www/app",
-            "cd /var/www/app",
- 
-            "if [ ! -d .git ]; then sudo git clone https://github.com/SwagataMondal19/Assignment-App.git .; else sudo git pull origin main; fi",
- 
-            "npm install",
- 
-            "pm2 stop app || true",
-            "pm2 start app.js --name app",
-            "pm2 save",
- 
-            "curl -f http://localhost:3000/health",
- 
-            "echo DEPLOY COMPLETE"
-          ]' \
-          --region ap-south-1
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-0a289b56122fa70e8 \
+            --instance-type t2.micro \
+            --subnet-id subnet-0a327a1d37f267db0 \
+            --security-group-ids sg-0aa41c1894bbe077b \
+            --user-data file://userdata.sh \
+            --query 'Instances[0].InstanceId' \
+            --output text)
+
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          echo "Launched Instance: $INSTANCE_ID"
+
+      # ⏳ Wait for instance
+      - name: Wait for Instance
+        run: |
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          echo "Instance is running..."
+          sleep 120
+
+      # 📦 Create AMI
+      - name: Create AMI
+        run: |
+          AMI_ID=$(aws ec2 create-image \
+            --instance-id $INSTANCE_ID \
+            --name "app-ami-$(date +%s)" \
+            --no-reboot \
+            --query 'ImageId' \
+            --output text)
+
+          echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
+          echo "Created AMI: $AMI_ID"
+
+      # ⏳ Wait for AMI
+      - name: Wait for AMI
+        run: |
+          aws ec2 wait image-available --image-ids $AMI_ID
+          echo "AMI is ready"
+
+      # 🔄 Update Launch Template
+      - name: Update Launch Template
+        run: |
+          aws ec2 create-launch-template-version \
+            --launch-template-id lt-0fb59605d82b68517 \
+            --source-version 1 \
+            --launch-template-data "{\"ImageId\":\"$AMI_ID\"}"
+
+      # 🔧 Set default version
+      - name: Set Default Version
+        run: |
+          VERSION=$(aws ec2 describe-launch-template-versions \
+            --launch-template-id lt-0fb59605d82b68517 \
+            --query 'LaunchTemplateVersions[-1].VersionNumber' \
+            --output text)
+
+          aws ec2 modify-launch-template \
+            --launch-template-id lt-0fb59605d82b68517 \
+            --default-version $VERSION
+
+          echo "Set default launch template version: $VERSION"
+
+      # ♻️ Refresh ASG
+      - name: Refresh ASG
+        run: |
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name terraform-2026041721012989000000000b
+
+          echo "Started ASG refresh"
+
+      # 🧹 Cleanup temp instance
+      - name: Terminate Temp Instance
+        run: |
+          aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+          echo "Terminated temp instance"
